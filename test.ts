@@ -2,8 +2,6 @@
         const x = 10;
         console.log("Hello, world!", x);
         const c = 20;
-        if (c > 15) {
-              
-        }
+        if (c > 15) { }
 
         
