@@ -3,141 +3,176 @@ import subprocess
 import sys
 import os
 import re
+import google.generativeai as genai
 
-def get_staged_diff():
-    """
-    Retrieves the staged changes from Git using 'git diff --staged'.
+# --- Configuration ---
+# Fetch the API key from environment variables
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
 
-    Returns:
-        str: The git diff as a string, or an empty string if there's an error or no diff.
-    """
+# --- Context Gathering Functions ---
+
+def run_command(command):
+    """A helper function to run shell commands and return the output."""
     try:
         result = subprocess.run(
-            ['git', 'diff', '--staged'],
+            command,
             capture_output=True,
             text=True,
             check=False
         )
         if result.returncode != 0:
-            if "not a git repository" in result.stderr:
-                print("Error: This is not a Git repository.", file=sys.stderr)
-                return None
-            print(f"Error getting git diff:\n{result.stderr}", file=sys.stderr)
-            return None
-
+            return f"Error running command '{' '.join(command)}':\n{result.stderr}"
         return result.stdout
     except FileNotFoundError:
-        print("Error: Git is not installed or not in your PATH.", file=sys.stderr)
-        return None
+        return f"Error: Command '{command[0]}' not found. Is it installed and in your PATH?"
+    except Exception as e:
+        return f"An unexpected error occurred: {e}"
 
-def detect_project_type():
+
+def get_staged_diff_with_context():
     """
-    Detects the project type based on common configuration files.
-
-    Returns:
-        str: A string indicating the detected project type (e.g., "TypeScript", "Python", "Unknown").
+    Retrieves the staged changes from Git with a larger context window for better analysis.
+    -U10 provides 10 lines of context around each change.
     """
-    if os.path.exists("package.json"):
-        for root, _, files in os.walk("."):
-            for file in files:
-                if file.endswith((".ts", ".tsx")):
-                    return "TypeScript"
-        return "Node.js"
-    elif os.path.exists("requirements.txt") or os.path.exists("pyproject.toml"):
-        return "Python"
-    return "Unknown"
+    return run_command(['git', 'diff', '--staged', '-U10'])
 
-def parse_diff_for_changed_files(diff_content):
+def get_git_log_subjects():
     """
-    Parses the git diff content to extract paths of changed files.
-
-    Args:
-        diff_content (str): The output from 'git diff --staged'.
-
-    Returns:
-        list: A list of file paths that have been changed.
+    Retrieves the subjects of the last 15 commits to understand recent project velocity.
     """
-    changed_files = set()
-    # Regex to find lines starting with '+++ b/' or '--- a/'
-    # which indicate new/old file paths in a diff.
-    # We strip '+++ b/' or '--- a/' and any leading 'i/' if present (for index lines).
-    for line in diff_content.splitlines():
-        match = re.match(r'^\+\+\+ b/(\S+)|^--- a/(\S+)', line)
-        if match:
-            file_path = match.group(1) or match.group(2)
-            if file_path and not file_path.startswith('/dev/null'): # Ignore null devices for added/deleted files
-                changed_files.add(file_path)
-    return list(changed_files)
+    return run_command(['git', 'log', '-n', '15', '--pretty=format:"%s"'])
+
+def get_file_tree():
+    """
+    Generates a pruned file tree of the repository, ignoring common noise.
+    """
+    ignore_dirs = ['.git', 'node_modules', '__pycache__', 'dist', 'build']
+    path_list = []
+    for root, dirs, files in os.walk("."):
+        # Prune ignored directories
+        dirs[:] = [d for d in dirs if d not in ignore_dirs]
+        
+        for name in files:
+            path_list.append(os.path.join(root, name))
+    
+    return "\n".join(path_list)
 
 def get_file_content(file_path):
-    """
-    Reads the content of a specified file.
-
-    Args:
-        file_path (str): The path to the file.
-
-    Returns:
-        str: The content of the file, or None if the file cannot be read.
-    """
+    """Reads the content of a specified file."""
     try:
-        with open(file_path, 'r', encoding='utf-8') as f:
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
             return f.read()
     except FileNotFoundError:
-        print(f"Warning: File not found: {file_path}", file=sys.stderr)
-        return None
+        return f"Warning: File not found: {file_path}"
     except Exception as e:
-        print(f"Warning: Could not read file {file_path}: {e}", file=sys.stderr)
-        return None
+        return f"Warning: Could not read file {file_path}: {e}"
+
+# --- AI Interaction ---
+
+def get_ai_criticism(prompt: str):
+    """
+    Sends the provided prompt to the Gemini API and returns the criticism.
+    """
+    if not GEMINI_API_KEY:
+        return """
+        **ERROR: Gemini API Key not found.**
+        Please set the `GEMINI_API_KEY` environment variable.
+        You can get a key from Google AI Studio: https://aistudio.google.com/
+        """
+    try:
+        print("Generating AI criticism... (this may take a moment)")
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        response = model.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        return f"An error occurred while communicating with the Gemini API: {e}"
+
+# --- Main Orchestrator ---
 
 def main():
     """
-    Main function for the criticize agent.
+    Main function for the AI-powered criticize agent.
     """
-    print("--- Running Criticize Agent ---")
+    print("--- Running AI Criticism Agent (Phase 1) ---")
 
-    project_type = detect_project_type()
-    print(f"Detected project type: {project_type}")
+    # 1. Gather all context
+    print("Gathering project context...")
+    readme_content = get_file_content("README.md") or get_file_content("GEMINI.md") or "No overview document found."
+    git_log_content = get_git_log_subjects()
+    file_tree_content = get_file_tree()
+    staged_diff_content = get_staged_diff_with_context()
 
-    staged_diff = get_staged_diff()
-
-    if staged_diff is None:
-        print("Could not retrieve staged changes. Exiting.", file=sys.stderr)
+    if "not a git repository" in staged_diff_content:
+        print("Error: This script must be run within a Git repository.", file=sys.stderr)
         sys.exit(1)
 
-    if not staged_diff.strip():
-        print("No staged changes found. Add files to the staging area first with 'git add'.")
+    if not staged_diff_content.strip() or "Error" in staged_diff_content:
+        print("No staged changes found or error retrieving diff. Add files with 'git add' before running.")
         return
 
-    print("\n--- Found Staged Changes ---")
-    print(staged_diff)
-    print("--------------------------")
+    # 2. Construct the Master Prompt
+    system_prompt = f"""
+You are a world-class senior software engineer and code reviewer. Your task is to provide a thorough, constructive, and actionable critique of the code changes provided below. Your analysis must be based on the complete context provided: the project's purpose, its recent history, its file structure, and the specific changes being introduced.
 
-    # Gather additional context
-    print("\n--- Gathering Context ---")
+**CRITICAL INSTRUCTIONS:**
+1.  **Analyze Holistically:** Do not just look at the changed lines. Evaluate how they fit into the overall project.
+2.  **Adhere to Conventions:** Check if the changes align with the style and patterns from the project's recent commit history.
+3.  **Identify Risks:** Look for potential bugs, security vulnerabilities, and anti-patterns.
+4.  **Be Constructive:** Your goal is to help the developer improve the code. Frame your feedback positively.
+5.  **Output Format:** Provide your response in Markdown with the specified structure: "Overall Assessment", "Code Quality Score", "Positive Feedback", and "Areas for Improvement".
 
-    # Read GEMINI.md
-    gemini_md_content = get_file_content("GEMINI.md")
-    if gemini_md_content:
-        print("\n--- GEMINI.md Content ---")
-        # In a real scenario, this would be summarized or used directly in the prompt
-        print(gemini_md_content[:500] + "..." if len(gemini_md_content) > 500 else gemini_md_content)
-        print("--------------------------")
-    else:
-        print("Warning: GEMINI.md not found or could not be read. No project overview context will be provided.")
+**CONTEXT PROVIDED:**
 
-    # Get content of changed files
-    changed_files = parse_diff_for_changed_files(staged_diff)
-    if changed_files:
-        print("\n--- Content of Changed Files ---")
-        for file_path in changed_files:
-            file_content = get_file_content(file_path)
-            if file_content:
-                print(f"\n--- File: {file_path} ---")
-                # In a real scenario, this would be summarized or used directly in the prompt
-                print(file_content[:500] + "..." if len(file_content) > 500 else file_content)
-                print("--------------------------")
-    else:
-        print("No changed files identified from diff.")
+---
+**1. Project Overview (from README.md/GEMINI.md):**
+{readme_content}
+---
+**2. Recent Commit History (last 15 commits):**
+{git_log_content}
+---
+**3. Project File Tree:**
+{file_tree_content}
+---
+**4. Staged Git Diff (with 10 lines of context):**
+{staged_diff_content}
+---
+
+**YOUR TASK:**
+Based on all the context above, provide a detailed code review in the following Markdown format:
+
+# AI Code Criticism Report
+
+## 1. Overall Assessment
+(A one-paragraph summary of the change.)
+
+## 2. Code Quality Score
+- **Clarity & Readability:** [Score 1-10]
+- **Correctness & Robustness:** [Score 1-10]
+- **Style & Consistency:** [Score 1-10]
+
+## 3. Positive Feedback
+* (Point 1)
+* (Point 2)
+
+## 4. Areas for Improvement
+*   **File:** `path/to/file.py`
+    *   **Line:** (approximate line number)
+    *   **Concern:** (Description of the issue)
+    *   **Suggestion:** (How to fix it)
+"""
+
+    # 3. Get AI Criticism
+    ai_response = get_ai_criticism(system_prompt)
+
+    # 4. Print the report
+    print("\n" + "="*80)
+    print("                 AI Code Criticism Report")
+    print("="*80 + "\n")
+    print(ai_response)
+    print("\n" + "="*80)
+
 
 if __name__ == "__main__":
     main()
