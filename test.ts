@@ -1,4 +1,9 @@
-const x = 10;
-console.log("Hello, world!", x);
-const c = 20; // Changed value
-console.log(c);
+// This is a new change for testing the investigator
+        const x = 10;
+        console.log("Hello, world!", x);
+        const c = 20;
+        if (c > 15) {
+              
+        }
+
+        
