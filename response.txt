@@ -1,0 +1,4 @@
+I have updated the `gemini_streaming_parallel.py` script with comments that are both educational and humorous, as you requested.
+The new comments aim to explain the code clearly while adding a light, witty touch, especially in examples and explanations of technical concepts.
+You can run the script using the same instructions as before.
+I hope this version strikes the right balance for you!

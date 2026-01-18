@@ -3,13 +3,11 @@ import subprocess
 import sys
 import os
 import re
-import google.generativeai as genai
+import google.genai as genai
 
 # --- Configuration ---
 # Fetch the API key from environment variables
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
+client = genai.Client()
 
 # --- Context Gathering Functions ---
 
@@ -75,16 +73,12 @@ def get_ai_criticism(prompt: str):
     """
     Sends the provided prompt to the Gemini API and returns the criticism.
     """
-    if not GEMINI_API_KEY:
-        return """
-        **ERROR: Gemini API Key not found.**
-        Please set the `GEMINI_API_KEY` environment variable.
-        You can get a key from Google AI Studio: https://aistudio.google.com/
-        """
     try:
         print("Generating AI criticism... (this may take a moment)")
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        response = model.generate_content(prompt)
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt
+        )
         return response.text
     except Exception as e:
         return f"An error occurred while communicating with the Gemini API: {e}"
