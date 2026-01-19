@@ -1,4 +1,10 @@
-I have updated the `gemini_streaming_parallel.py` script with comments that are both educational and humorous, as you requested.
-The new comments aim to explain the code clearly while adding a light, witty touch, especially in examples and explanations of technical concepts.
-You can run the script using the same instructions as before.
-I hope this version strikes the right balance for you!
+The prompts used in the `gemini_streaming_parallel.py` script are:
+
+*   "Tell me a joke about a developer who is trying to center a div."
+*   "Write a short story about a rubber duck who is having an existential crisis."
+*   "Explain the meaning of life in one sentence, but make it sound like a threat."
+*   "Write a passive-aggressive error message for a user who forgot to save their work."
+
+These prompts are designed to test the AI's ability to generate humorous and critical content, aligning with your request for witty, edgy, and developer-centric responses.
+
+What are your thoughts on these prompts? Would you like to modify them, or do they serve your purpose for testing the script's capabilities?
